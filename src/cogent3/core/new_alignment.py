@@ -4722,58 +4722,66 @@ class Alignment(SequenceCollection):
         )
         return probs.entropy()
 
-    def counts_per_seq(
-        self,
-        motif_length: int = 1,
-        include_ambiguity: bool = False,
-        allow_gap: bool = False,
-        exclude_unobserved: bool = False,
-        warn: bool = False,
-    ) -> MotifCountsArray:
-        """counts of non-overlapping motifs per sequence
+def counts_per_seq(
+    self,
+    motif_length: int = 1,
+    include_ambiguity: bool = False,
+    allow_gap: bool = False,
+    exclude_unobserved: bool = False,
+    warn: bool = False,
+) -> MotifCountsArray:
+    """counts of non-overlapping motifs per sequence
 
-        Parameters
-        ----------
-        motif_length
-            number of elements per character.
-        include_ambiguity
-            if True, motifs containing ambiguous characters
-            from the seq moltype are included. No expansion of those is attempted.
-        allow_gap
-            if True, motifs containing a gap character are included.
-        exclude_unobserved
-            if False, all canonical states included
-        warn
-            warns if motif_length > 1 and alignment trimmed to produce
-            motif columns
-        """
-        length = (len(self) // motif_length) * motif_length
-        if warn and len(self) != length:
-            warnings.warn(f"trimmed {len(self) - length}", UserWarning, stacklevel=2)
+    Parameters
+    ----------
+    motif_length
+        number of elements per character.
+    include_ambiguity
+        if True, motifs containing ambiguous characters
+        from the seq moltype are included. No expansion of those is attempted.
+    allow_gap
+        if True, motifs containing a gap character are included.
+    exclude_unobserved
+        if False, all canonical states included
+    warn
+        warns if motif_length > 1 and alignment trimmed to produce
+        motif columns
+    """
+    length = (len(self) // motif_length) * motif_length
+    if warn and len(self) != length:
+        warnings.warn(f"trimmed {len(self) - length}", UserWarning, stacklevel=2)
 
-        counts = []
-        motifs = set()
-        for name in self.names:
-            seq = self.get_gapped_seq(name)
-            c = seq.counts(
-                motif_length=motif_length,
-                include_ambiguity=include_ambiguity,
-                allow_gap=allow_gap,
-                exclude_unobserved=exclude_unobserved,
-            )
-            motifs.update(c.keys())
-            counts.append(c)
+    counts = []
+    motifs = set()
+    for name in self.names:
+        c = CategoryCounter()
+        seq = numpy.array(list(self.get_gapped_seq(name))) # To numpy data
+        
+        unique_chars, counts = numpy.unique(seq, return_counts=True)
+        char_counts = dict(zip(unique_chars, counts))
 
-        if not exclude_unobserved:
-            motifs.update(self.moltype.alphabet.get_kmer_alphabet(motif_length))
+        motifs.update(c.keys())
+        counts.append(c)
 
-        motifs = sorted(motifs)
-        if not motifs:
-            return None
+    if not exclude_unobserved:
+        motifs.update(self.moltype.alphabet.get_kmer_alphabet(motif_length))
 
-        for i, c in enumerate(counts):
-            counts[i] = c.tolist(motifs)
-        return MotifCountsArray(counts, motifs, row_indices=self.names)
+    motifs = sorted(motifs)
+    if not motifs:
+        return None
+    
+    count_matrix = numpy.zeros((len(counts)), len(motifs), dtype= int)
+    motif_to_idx = {}
+    for i, motif in enumerate(motifs):
+        motif_to_idx[motif] = i
+    '''
+    for i, c in enumerate(counts):
+        counts[i] = c.tolist(motifs)
+    '''
+    for i, c in enumerate(counts): # For all seqs times
+        for motif, count in c.items(): # For this motif nums
+            count_matrix[i, motif_to_idx[motif]] = count # stored
+    return MotifCountsArray(count_matrix, motifs, row_indices=self.names)
 
     def probs_per_seq(
         self,
